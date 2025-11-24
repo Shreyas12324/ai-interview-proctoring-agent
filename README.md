@@ -98,6 +98,7 @@ interview-service/
 ```
 ### 🔶 High-Level System Architecture (Mermaid Diagram)
 
+````md
 ```mermaid
 flowchart LR
     A[React Frontend] -->|HTTP Requests| B(FastAPI Interview Backend)
@@ -108,7 +109,7 @@ flowchart LR
 
     B -->|Interview Responses| A
     B -->|Final Feedback| A
----
+
 
 
 
