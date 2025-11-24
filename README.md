@@ -100,19 +100,8 @@ interview-service/
 
 
 
-````md
-```mermaid
-flowchart LR
-    A[React Frontend] -->|HTTP Requests| B(FastAPI Interview Backend)
-    A -->|Webcam Frames| C(ML YOLO Service)
+<img width="1130" height="310" alt="image" src="https://github.com/user-attachments/assets/aa755ff4-3f9c-4c67-9576-43f1deb97127" />
 
-    B -->|LLM Query| D[Groq LLaMA 3.3 70B]
-    C -->|Cheating Events| B
-
-    B -->|Interview Responses| A
-    B -->|Final Feedback| A
-````
----
 **ML Service** (separate, port 8001): YOLO-based detection service
 
 
