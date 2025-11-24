@@ -109,9 +109,9 @@ flowchart LR
 
     B -->|Interview Responses| A
     B -->|Final Feedback| A
-
+```
 ````
-
+---
 
 **ML Service** (separate, port 8001): YOLO-based detection service
 
