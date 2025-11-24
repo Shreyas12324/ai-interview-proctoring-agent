@@ -96,6 +96,18 @@ interview-service/
 │
 └── README.md
 ```
+### 🔶 High-Level System Architecture (Mermaid Diagram)
+
+```mermaid
+flowchart LR
+    A[React Frontend] -->|HTTP Requests| B(FastAPI Interview Backend)
+    A -->|Webcam Frames| C(ML YOLO Service)
+
+    B -->|LLM Query| D[Groq LLaMA 3.3 70B]
+    C -->|Cheating Events| B
+
+    B -->|Interview Responses| A
+    B -->|Final Feedback| A
 
 **ML Service** (separate, port 8001): YOLO-based detection service
 
@@ -415,18 +427,5 @@ For questions or support, please open an issue on GitHub.
 **Repository**: [https://github.com/Shreyas12324/ExamPlatformAntiCheating](https://github.com/Shreyas12324/ExamPlatformAntiCheating)
 
 ---
-
-## 🎯 Roadmap
-
-- [ ] Database persistence (PostgreSQL/MongoDB)
-- [ ] User authentication & profiles
-- [ ] Interview history & analytics
-- [ ] Export feedback as PDF
-- [ ] Multi-language support
-- [ ] Mobile app (React Native)
-- [ ] Advanced cheating detection (eye tracking, audio analysis)
-- [ ] Team interviews (panel mode)
-
 ---
 
-**Made with ❤️ by Shreyas12324**
