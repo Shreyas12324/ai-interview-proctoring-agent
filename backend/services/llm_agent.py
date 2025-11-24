@@ -153,11 +153,22 @@ Cheating events detected: {cheating_summary.get('total_events', 0)}"""
 
         system_prompt = f"""You are a professional interview evaluator for {role} positions.
 
-Analyze the complete interview conversation and provide detailed feedback.
+Analyze the complete interview conversation and provide detailed, HONEST feedback.
 
 Scoring Rubric: {rubric}
 
 {self.persona_instructions}
+
+SCORING GUIDELINES (Be honest and fair - don't inflate scores):
+- 9-10: Exceptional - Expert-level answers, clear communication, outstanding depth
+- 7-8: Strong - Good technical knowledge, well-articulated, minor gaps
+- 5-6: Adequate - Meets basic requirements, some unclear areas, room for improvement
+- 3-4: Below Average - Significant gaps, struggled with questions, needs development
+- 1-2: Poor - Major deficiencies, minimal understanding, very brief answers
+- 0: No participation or ended immediately
+
+IMPORTANT: Most candidates should score in the 4-7 range. Reserve 8+ for truly impressive answers.
+Give credit for effort and partial knowledge, but be honest about gaps.
 
 Generate feedback in JSON format:
 {{
@@ -171,10 +182,11 @@ Generate feedback in JSON format:
 }}
 
 Base scores on:
-- Technical accuracy and depth
-- Communication clarity
+- Technical accuracy and depth (not just answering, but quality of answers)
+- Communication clarity and structure
 - Confidence and professionalism
-- Ability to articulate thoughts"""
+- Ability to articulate complex thoughts
+- Handling of follow-up questions"""
 
         # Prepare conversation context
         conversation_text = "\n".join(
@@ -193,17 +205,38 @@ Cheating Summary:
 
 User provided {len(user_messages)} answers with {total_user_words} total words.
 
-CRITICAL: If the candidate provided no meaningful answers or ended interview immediately without participating (0 messages or <10 words), 
-give 0/10 for ALL score categories and provide feedback explaining lack of participation. Do not give 1/10 - give 0/10.
-For minimal participation, scores should reflect the quality (0-2 range for very poor performance).
+EVALUATION INSTRUCTIONS:
+1. If NO participation (0 messages or <10 words): Give 0/10 for all categories
+2. If minimal effort (very short answers, no detail): Score 2-4 range
+3. If adequate but basic (answered questions but surface-level): Score 5-6 range
+4. If good (clear answers with examples, demonstrates knowledge): Score 7-8 range
+5. If exceptional (expert-level, insightful, excellent communication): Score 9-10 range
 
-Provide comprehensive feedback."""
+Analyze each answer for:
+- Depth: Did they provide details/examples or just brief statements?
+- Relevance: Did they answer the actual question asked?
+- Technical accuracy: Were their statements correct?
+- Communication: Were answers well-structured and clear?
+
+Be fair but honest. Don't inflate scores. Most interviews should fall in 4-7 range.
+
+Provide comprehensive feedback with specific examples from their answers."""
 
         response = self._call_llm(system_prompt, user_prompt, json_mode=True)
 
         try:
             # Try to parse JSON response
-            feedback = json.loads(response)
+            # Clean up response - remove markdown code blocks if present
+            cleaned_response = response.strip()
+            if cleaned_response.startswith("```json"):
+                cleaned_response = cleaned_response[7:]
+            if cleaned_response.startswith("```"):
+                cleaned_response = cleaned_response[3:]
+            if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3]
+            cleaned_response = cleaned_response.strip()
+
+            feedback = json.loads(cleaned_response)
 
             # Validate required fields
             required_fields = [
@@ -219,57 +252,137 @@ Provide comprehensive feedback."""
                 if field not in feedback:
                     raise ValueError(f"Missing required field: {field}")
 
+            # Ensure scores are integers between 0-10
+            feedback["technical_score"] = max(
+                0, min(10, int(feedback["technical_score"]))
+            )
+            feedback["communication_score"] = max(
+                0, min(10, int(feedback["communication_score"]))
+            )
+            feedback["confidence_score"] = max(
+                0, min(10, int(feedback["confidence_score"]))
+            )
+
+            # Ensure arrays are actually arrays
+            if not isinstance(feedback["strengths"], list):
+                feedback["strengths"] = [str(feedback["strengths"])]
+            if not isinstance(feedback["weaknesses"], list):
+                feedback["weaknesses"] = [str(feedback["weaknesses"])]
+            if not isinstance(feedback["recommendations"], list):
+                feedback["recommendations"] = [str(feedback["recommendations"])]
+
             # Add cheating summary to feedback
             feedback["cheating_summary"] = cheating_summary
             print("✓ Successfully generated feedback")
 
         except (json.JSONDecodeError, ValueError) as e:
             print(f"⚠ Feedback parsing error: {e}")
-            print(f"Raw response: {response[:200]}...")
+            print(f"Raw response (first 500 chars): {response[:500]}...")
+            print(f"Raw response (last 200 chars): ...{response[-200:]}")
 
-            # Check if interview was actually completed
-            user_messages = [
-                msg for msg in conversation_history if msg["role"] == "user"
-            ]
-            total_words = sum(len(msg["content"].split()) for msg in user_messages)
+            # Try one more time with explicit JSON formatting
+            print("🔄 Retrying with more explicit JSON instructions...")
+            retry_prompt = user_prompt + "\n\nREMINDER: Return ONLY a JSON object. No extra text, no markdown formatting."
+            
+            try:
+                retry_response = self._call_llm(
+                    system_prompt, retry_prompt, json_mode=True
+                )
+                
+                # Clean and parse retry response
+                cleaned_retry = retry_response.strip()
+                if cleaned_retry.startswith("```json"):
+                    cleaned_retry = cleaned_retry[7:]
+                if cleaned_retry.startswith("```"):
+                    cleaned_retry = cleaned_retry[3:]
+                if cleaned_retry.endswith("```"):
+                    cleaned_retry = cleaned_retry[:-3]
+                cleaned_retry = cleaned_retry.strip()
+                
+                feedback = json.loads(cleaned_retry)
+                
+                # Validate and normalize
+                feedback["technical_score"] = max(
+                    0, min(10, int(feedback.get("technical_score", 5)))
+                )
+                feedback["communication_score"] = max(
+                    0, min(10, int(feedback.get("communication_score", 5)))
+                )
+                feedback["confidence_score"] = max(
+                    0, min(10, int(feedback.get("confidence_score", 5)))
+                )
+                
+                if not isinstance(feedback.get("strengths"), list):
+                    feedback["strengths"] = []
+                if not isinstance(feedback.get("weaknesses"), list):
+                    feedback["weaknesses"] = []
+                if not isinstance(feedback.get("recommendations"), list):
+                    feedback["recommendations"] = []
+                
+                feedback["cheating_summary"] = cheating_summary
+                print("✓ Retry successful - feedback generated")
+                
+            except Exception as retry_error:
+                print(f"❌ Retry also failed: {retry_error}")
+                
+                # Check if interview was actually completed
+                user_messages = [
+                    msg for msg in conversation_history if msg["role"] == "user"
+                ]
+                total_words = sum(
+                    len(msg["content"].split()) for msg in user_messages
+                )
 
-            # Fallback feedback
-            if len(user_messages) == 0 or total_words < 10:
-                feedback = {
-                    "technical_score": 0,
-                    "communication_score": 0,
-                    "confidence_score": 0,
-                    "overall_summary": "Interview was ended without providing any meaningful responses. No evaluation possible.",
-                    "strengths": [],
-                    "weaknesses": [
-                        "Did not participate in the interview",
-                        "Ended session immediately without providing any answers",
-                    ],
-                    "recommendations": [
-                        "Complete the full interview",
-                        "Provide thoughtful answers to questions",
-                        "Engage with the interviewer",
-                    ],
-                    "cheating_summary": cheating_summary,
-                }
-            else:
-                feedback = {
-                    "technical_score": 5,
-                    "communication_score": 5,
-                    "confidence_score": 5,
-                    "overall_summary": "Thank you for completing the interview. Due to a technical issue, we couldn't generate detailed feedback.",
-                    "strengths": [
-                        "Completed the interview session",
-                        "Engaged with questions",
-                    ],
-                    "weaknesses": ["Technical feedback generation issue"],
-                    "recommendations": [
-                        "Practice more interviews",
-                        "Review role-specific topics",
-                        "Work on communication clarity",
-                    ],
-                    "cheating_summary": cheating_summary,
-                }
+                # Fallback feedback based on participation
+                if len(user_messages) == 0 or total_words < 10:
+                    feedback = {
+                        "technical_score": 0,
+                        "communication_score": 0,
+                        "confidence_score": 0,
+                        "overall_summary": "Interview was ended without providing any meaningful responses. No evaluation possible.",
+                        "strengths": [],
+                        "weaknesses": [
+                            "Did not participate in the interview",
+                            "Ended session immediately without providing any answers",
+                        ],
+                        "recommendations": [
+                            "Complete the full interview",
+                            "Provide thoughtful answers to questions",
+                            "Engage with the interviewer",
+                        ],
+                        "cheating_summary": cheating_summary,
+                    }
+                else:
+                    # Use basic scoring based on participation
+                    avg_words = total_words / max(len(user_messages), 1)
+                    base_score = min(
+                        7, max(3, int(len(user_messages) * 1.2))
+                    )  # 3-7 range based on answers
+
+                    feedback = {
+                        "technical_score": base_score,
+                        "communication_score": base_score,
+                        "confidence_score": base_score,
+                        "overall_summary": f"You completed {len(user_messages)} interview questions with an average response length of {int(avg_words)} words. While we encountered a technical issue generating detailed AI feedback, your participation demonstrates engagement with the interview process.",
+                        "strengths": [
+                            f"Completed {len(user_messages)} interview questions",
+                            "Provided responses to all questions asked",
+                            "Maintained engagement throughout the interview",
+                        ],
+                        "weaknesses": [
+                            "Consider providing more detailed responses with specific examples",
+                            "Expand on your answers to demonstrate deeper knowledge",
+                        ],
+                        "recommendations": [
+                            f"Practice {role} interview questions with detailed examples",
+                            "Work on structuring answers using the STAR method (Situation, Task, Action, Result)",
+                            "Research common questions for this role and prepare comprehensive answers",
+                        ],
+                        "cheating_summary": cheating_summary,
+                    }
+                    print(
+                        f"⚠ Using fallback scoring: {base_score}/10 based on {len(user_messages)} answers, {total_words} words"
+                    )
 
         return feedback
 
@@ -281,9 +394,7 @@ Provide comprehensive feedback."""
             # Add JSON instruction if json_mode (Groq doesn't have response_format)
             system_content = system_prompt
             if json_mode:
-                system_content += (
-                    "\n\nIMPORTANT: Respond with valid JSON only. No additional text."
-                )
+                system_content += "\n\nCRITICAL: You MUST respond with ONLY valid JSON. No markdown, no code blocks, no explanations. Just pure JSON starting with { and ending with }."
 
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -291,7 +402,7 @@ Provide comprehensive feedback."""
                     {"role": "system", "content": system_content},
                     {"role": "user", "content": user_prompt},
                 ],
-                temperature=0.7,
+                temperature=0.5,  # Lower temperature for more consistent JSON
                 max_tokens=2048,
             )
 
