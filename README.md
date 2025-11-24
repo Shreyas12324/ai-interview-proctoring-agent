@@ -98,8 +98,10 @@ interview-service/
 ```
 ### 🔶 High-Level System Architecture (Mermaid Diagram)
 
+### 🔶 High-Level System Architecture (Mermaid Diagram)
+
 ````md
-```mermaid
+```
 flowchart LR
     A[React Frontend] -->|HTTP Requests| B(FastAPI Interview Backend)
     A -->|Webcam Frames| C(ML YOLO Service)
@@ -110,10 +112,10 @@ flowchart LR
     B -->|Interview Responses| A
     B -->|Final Feedback| A
 ```
-````
+**ML Service** (separate, port 8001): YOLO-based detection service
 ---
 
-**ML Service** (separate, port 8001): YOLO-based detection service
+
 
 ---
 
